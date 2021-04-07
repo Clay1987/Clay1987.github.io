@@ -1,1 +1,197 @@
-Test
+// ==UserScript==
+// @name        Dirvolino (FuStw ALL)
+// @version      1.0.1
+// @author       NoOne
+// @description  Zeigt Sprechwuensche aller Einsaetze an
+// @include      *://www.leitstellenspiel.de/*
+// @grant        none
+// ==/UserScript==
+/* global $ */
+
+(function() {
+    'use strict';
+    $("head").append(`<style>
+                             .modal {
+                                 display: none;
+                                 position: fixed; /* Stay in place front is invalid - may break your css so removed */
+                                 padding-top: 100px;
+                                 left: 0;
+                                 right:0;
+                                 top: 0;
+                                 bottom: 0;
+                                 overflow: auto;
+                                 background-color: rgb(0,0,0);
+                                 background-color: rgba(0,0,0,0.4);
+                                 z-index: 9999;
+                             }
+                             .modal-body{
+                                 height: 650px;
+                                 overflow-y: auto;
+                             }
+                      </style>`);
+
+    $("#btn-group-mission-select").before(`<a href="#"
+                                              class="btn btn-xs btn-warning"
+                                              id="showMissionRequests"
+                                              data-toggle="modal"
+                                              data-target="#bsShowMissions"
+                                           >
+                                               Drivolino (Fustw ALL)
+                                           </a>`);
+
+    $("#btn-group-mission-select")
+        .after(`<div class="modal fade"
+                     id="bsShowMissions"
+                     tabindex="-1"
+                     role="dialog"
+                     aria-labelledby="bsModalLabel"
+                     aria-hidden="true"
+                >
+                    <div class="modal-dialog modal-lg" role="document">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="bsModalLabel">
+                                    Einsätze anfahren
+                                </h5>
+<a href="#" class="btn btn-default btn-xs" id="bs_alarm_go">Go</a>
+                                <button type="button"
+                                        class="close"
+                                        data-dismiss="modal"
+                                        aria-label="Close"
+                                >
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class="modal-body" id="bsBody"></div>
+                            <div class="modal-footer">
+                                <button type="button"
+                                        class="btn btn-secondary"
+                                        data-dismiss="modal"
+                                >
+                                    Schließen
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`);
+
+    function letsStart(missionId){
+        let key = 0;
+        let alreadyFoundCars = [];
+        $("div[id^=bs_alarm_button_]").each(function(){
+            let missionId = $(this).attr("id").replace("bs_alarm_button_", "");
+
+            setTimeout(function(){
+                $("#bs_alarm_button_" + missionId).text("suche ...");
+                $.get("/missions/" + missionId).done(function(result){
+                    let $this = $(result);
+                    $(".vehicle_checkbox", $this).each(function(){
+                        let $this = $(this);
+                        let vehicle_type_id = $this.attr("vehicle_type_id");
+                        let vehicle_id = $this.attr("value");
+
+                        if(vehicle_type_id ==='32' && $.inArray(vehicle_id, alreadyFoundCars) == -1){
+                            $("#bs_alarm_button_" + missionId).text("alarmiere ...");
+                            alreadyFoundCars.push(vehicle_id);
+                            $.get("/missions/" + missionId + "/alarm", {"vehicle_ids" : vehicle_id, "authenticity_token" : $("meta[name=csrf-token]").attr("content")}).done(function(){
+                                setTimeout(function(){
+                                    if($(".radio_message_vehicle_" + vehicle_id).find("span").first().hasClass("building_list_fms_3")){
+                                        $("#bsMission_" + missionId).css("display", "none");
+                                    } else {
+                                        $("#bsMission_" + missionId).removeClass("alert-success").addClass("alert-warning");
+                                        $("#bs_alarm_button_" + missionId).html(`<a href="/missions/${missionId}" class="btn btn-default btn-xs lightbox-open">Fehler!</a>`);
+                                    }
+                                }, 20000);
+                            });
+                            return false;
+                        } else {
+                            $("#bsMission_" + missionId).removeClass("alert-success").addClass("alert-warning");
+                            $("#bs_alarm_button_" + missionId).html(`<a href="/missions/${missionId}" class="btn btn-default btn-xs lightbox-open">Fehler!</a>`);
+                        }
+                    });
+                });
+            }, key * 500);
+            key++;
+        });
+    }
+
+    function bsCreateTable(missions){
+        $("#bsTable").remove();
+        let strOutput = `<table id="bsTable" class="table">
+                             <tr>
+                                 <th class="col">Bezeichnung</th>
+                                 <th class="col">Adresse</th>
+                                 <th class="col"></th>
+                             </tr>`;
+
+        for(let i = 0; i < missions.length; i++){
+            strOutput += `<tr class="alert alert-success" id="bsMission_${missions[i].missionId}">
+                              <td class="col"><div class="glyphicon glyphicon-${missions[i].missionType}"></div> ${missions[i].missionTitle}</td>
+                              <td class="col">${missions[i].missionAddress}</td>
+                              <td class="pull-right col">
+                                  <div id="bs_alarm_button_${missions[i].missionId}"></div>
+                              </td>
+                          </tr>`;
+        }
+        strOutput += "</table>";
+
+        return strOutput;
+    }
+
+    function bsDoWork(){
+        let missions = [];
+        $("#mission_list  > .missionSideBarEntry, #mission_list_alliance > .missionSideBarEntry, #mission_list_alliance_event > .missionSideBarEntry, #mission_list_sicherheitswache > .missionSideBarEntry").each(function() {
+            let $this = $(this);
+            let missionId = $this.attr("mission_id");
+            let checkSource = $this.find("[id^='mission_vehicle_state_']").attr("src");
+            let regexMissionName = new RegExp(/\[.*\](.*?),/gm);
+            let missionName = $this.find("#mission_caption_" + missionId).text().match(regexMissionName) == null ?
+                $this.find("#mission_caption_" + missionId).text() : $this.find("#mission_caption_" + missionId).text().match(regexMissionName)[0];
+            missionName = missionName.replace("[Verband] ", "").replace("[Event] ", "").replace(",", "");
+            let missionAddress = $this.find("#mission_address_" + missionId).text() == "" ? "unbekannt" : $this.find("#mission_address_" + missionId).text();
+            let missionType = "home";
+            let matchValue = 0;
+            let matchFound = true;
+
+            if(checkSource.indexOf("/original/10") >= 0) {
+                matchFound = true;
+                matchValue = 10;
+            } else if(checkSource.indexOf("/original/8") >= 0) {
+                matchFound = true;
+                matchValue = 8;
+            } else if(checkSource.indexOf("/original/ZeitVoll") >= 0) {
+                matchFound = true;
+                missionType = "hourglass";
+                matchValue = 8;
+            } else if(checkSource.indexOf("/images/blast") >= 0 || checkSource.indexOf("/original/V") >= 0) {
+                matchFound = true;
+                missionType = "star";
+                matchValue = 11;
+            }// else if(checkSource.indexOf("/original/6") >= 0) {
+             //   matchFound = true;
+             //   missionType = "trash";
+             //   matchValue = 6;
+             //}
+
+            if(matchFound && $(this).find("[id^='mission_participant_']").hasClass("glyphicon-user hidden") && !$(this).hasClass("mission_deleted")) {
+                missions.push({"missionId": missionId, "missionTitle": missionName, "missionAddress": missionAddress, "missionType": missionType, "missionValue": matchValue});
+            }
+        });
+
+        missions.sort(function(a, b){
+            if(a.missionValue > b.missionValue) return -1;
+            else return 1;
+        });
+
+        $("#bsModalLabel").text(`${missions.length} Einsätze anfahren`);
+        $("#bsBody").html(bsCreateTable(missions));
+    }
+
+    $("body").on("click", "#showMissionRequests", function(){
+        bsDoWork();
+    });
+
+    $("body").on("click", "#bs_alarm_go", function(){
+        letsStart();
+    });
+})();
