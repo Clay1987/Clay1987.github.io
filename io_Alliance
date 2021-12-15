@@ -42,9 +42,6 @@ if (!aVehicleTypesNew) var aVehicleTypesNew = [];
         return false;
     }
 
-    if (user.alliance_admin || user.alliance_coadmin) {
-        katSBund = await $.getJSON(`${ kats_url }/json/katsBund.json`);
-    }
 
     $('head').append(`<link rel="stylesheet" href="${ kats_url }/additional/main.css?${ new Date().getTime() }" type="text/css" />`);
 
